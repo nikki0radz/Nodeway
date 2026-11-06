@@ -47,3 +47,11 @@ The importer was tested on all four original RSL saves and the complete original
 These structural checks do not independently validate hand labels or strategy percentages. The experimental grid needs comparison with RocketSolver at identical nodes before it can be treated as verified strategy data.
 
 Third-party dependency licences are included in `dist/THIRD-PARTY-LICENSES.txt`. RAR extraction uses node-unrar-js / UnRAR; Zstandard decoding uses fzstd.
+
+## Design feedback
+
+The saved-solution viewer and all sample concepts include Design mode. The switch pauses replay and navigation; in-flight importer messages are deferred until it is turned off. Right click, long press, click, or focus an element and press Enter to leave a comment. Comments capture a CSS selector, visible label, panel, viewport, page, and selected node/path, with no solution binary or strategy arrays.
+
+Drafts and confirmed history are kept in browser local storage under `nodeway-design-comments-v1`, shared between both pages. The upload preview identifies the public destination before any submission. **Upload comments → Prepare GitHub upload → Open GitHub to submit** opens an issue draft in `nikki0radz/Nodeway`. Owen signs into GitHub and presses Create. This does not use an API token or silently post as Nicole. Large batches use a full-text copy/paste fallback rather than truncating URL content. JSON backup remains available.
+
+Returning to **Check upload** looks for the exact batch JSON among the latest 100 issues. Opening the draft or submitting a partial body does not clear the drafts or mark them uploaded. Network failures retain everything. New comments can be sent in later batches. Nicole can ask ChatGPT to read the repository's `[Design feedback]` issues. No background monitoring is implied.

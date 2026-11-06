@@ -1,6 +1,8 @@
+import {initFeedback} from './feedback.js';
 import {createViews,createNavigationIndex} from './views.js';
 import {describeSolution,solutionCard} from './solution-card.js';
 const $=id=>document.getElementById(id),positions=['SB','BB','EP','MP','CO','BTN'];
+let designPaused=false,deferredMessages=[];
 let worker,solution,nodeMap,history=[],archiveFiles=[],busy=false,selectedIndex=null,navIndex,trail=[],currentRange=null,rangeError=null,rangeRequest=0,solutionSerial=0;
 const el=(tag,text,className)=>{const n=document.createElement(tag);n.textContent=text;if(className)n.className=className;return n;};
 const shortName=name=>name.split(/[\\/]/).at(-1);
@@ -17,6 +19,7 @@ function requestRange(){
  renderNode();if(!n.terminal)worker.postMessage({type:'range',nodeId:n.id,requestId,solutionSerial});
 }
 function startWorker(){worker?.terminate();worker=new Worker(new URL(__NODEWAY_WORKER_URL__,location.href));worker.onerror=event=>showError('Importer stopped: '+(event.message||'worker script could not be loaded')+'. Refresh and try again, or use a single extracted .rsl file.');worker.onmessage=({data})=>{
+ if(designPaused){deferredMessages.push(data);return;}
  if(data.type==='progress'){$('status').hidden=false;$('status').textContent=data.message;}
  if(data.type==='error')showError(data.message);
  if((data.type==='range'||data.type==='range-error')&&data.requestId===rangeRequest&&data.solutionSerial===solutionSerial){if(data.type==='range')currentRange=data.range;else rangeError=data.message;renderNode();}
@@ -58,3 +61,9 @@ $('image').onclick=()=>{
  lines.forEach((line,i)=>{c.fillStyle=i===lines.length-1?'#dcf58c':'#eff2e9';c.font='24px system-ui';c.fillText(`${String(i).padStart(2,'0')}   ${line}`,85,240+i*48);});
  c.fillStyle='#a5b4af';c.font='18px system-ui';c.fillText(n.terminal?'End of preflop path':`Next: ${positions[n.actor]} — ${n.actions.map(label).join(' / ')}`,70,canvas.height-120);c.fillText('Experimental viewer · Range mapping is unverified. EV and equity are not displayed.',70,canvas.height-65);canvas.toBlob(blob=>{if(blob)download(blob,'nodeway-saved-path.png');},'image/png');
 };
+
+initFeedback({
+ pause:()=>{designPaused=true;views.stop();renderNode();},
+ resume:()=>{designPaused=false;const queued=deferredMessages;deferredMessages=[];for(const data of queued)worker?.onmessage({data});},
+ context:()=>({kind:'saved-solution',solution:solution?describeSolution(solution.name).shortTitle:null,nodeId:solution?current().id:null,path:history.map(h=>({player:positions[h.actor],action:label(h.action),node:h.action.id})),views:[...document.querySelectorAll('.view-panel h3')].map(e=>e.textContent),build:document.querySelector('script[src*="app.js"]')?.getAttribute('src')})
+});
