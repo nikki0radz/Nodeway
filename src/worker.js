@@ -1,17 +1,28 @@
 import { createExtractorFromData } from 'node-unrar-js/esm/index.esm.js';
 import wasmBinary from 'node-unrar-js/esm/js/unrar.wasm';
 import { parseRsl } from './rsl.js';
-let extractor,files=[];
+import { createRangeReader } from './ranges.js';
+let extractor,files=[],rangeReader=null,solutionSerial=0;
+async function loadSolution(raw,name){
+ const serial=++solutionSerial;rangeReader=null;const solution=await parseRsl(raw,name,progress);
+ if(serial!==solutionSerial)return;rangeReader=createRangeReader(raw,solution);
+ send('solution',{solution:{...solution,rangeStatus:'experimental'},solutionSerial:serial});
+}
 const send=(type,data)=>self.postMessage({type,...data});
 const progress=message=>send('progress',{message});
 self.onmessage=async({data})=>{
  try{
-  if(data.type==='open'){
+  if(data.type==='range'){
+   const reader=rangeReader,serial=solutionSerial;
+   if(!reader||data.solutionSerial!==serial)throw new Error('Select a solution before loading ranges.');
+   const range=await reader(data.nodeId);send('range',{range,requestId:data.requestId,solutionSerial:serial});
+  }else if(data.type==='open'){
+   rangeReader=null;solutionSerial++;
    extractor=null;files=[];const file=data.file;
    if(!file.size||file.size>256*1024*1024)throw new Error('Choose a non-empty .rar or .rsl file smaller than 256 MB.');
    progress('Reading file on your device…');const bytes=await file.arrayBuffer();
    if(new Uint8Array(bytes,0,Math.min(4,bytes.byteLength)).join(',')==='82,83,79,76'){
-    send('solution',{solution:await parseRsl(new Uint8Array(bytes),file.name,progress)});return;
+    await loadSolution(new Uint8Array(bytes),file.name);return;
    }
    if(![82,97,114,33,26,7].every((b,i)=>new Uint8Array(bytes)[i]===b))throw new Error('Choose the .rar archive or an extracted .rsl solution. Installers (.exe), ZIPs and screenshots cannot be imported.');
    progress('Opening RAR archive…');extractor=await createExtractorFromData({data:bytes,wasmBinary});
@@ -28,7 +39,7 @@ self.onmessage=async({data})=>{
    // Exhaust the generator so the native archive handle is released.
    for(const item of extractor.extract({files:[file.name]}).files)if(item.fileHeader.name===file.name)raw=item.extraction;
    if(!raw)throw new Error('The archive did not contain the selected solution.');
-   send('solution',{solution:await parseRsl(raw,file.name,progress)});
+   await loadSolution(raw,file.name);
   }
- }catch(error){send('error',{message:error.message||'Unable to read this file.'});}
+ }catch(error){send(data.type==='range'?'range-error':'error',{message:error.message||'Unable to read this file.',requestId:data.requestId,solutionSerial:data.solutionSerial});}
 };

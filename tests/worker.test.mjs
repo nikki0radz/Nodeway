@@ -16,6 +16,11 @@ test('built browser worker imports the real RAR and selects all four saves',{ski
   const solution=events.find(e=>e.type==='solution')?.solution;
   assert.equal(solution?.nodes.length,i%2===0?22236:9932);
   assert.equal(solution?.totalNodes,[3681164,2238508,3277919,1835263][i]);
+  const serial=events.find(e=>e.type==='solution').solutionSerial;events.length=0;
+  await self.onmessage({data:{type:'range',nodeId:0,requestId:41,solutionSerial:serial}});
+  const range=events.find(e=>e.type==='range');assert.equal(range?.requestId,41);assert.equal(range?.range.hands.length,169);
+  events.length=0;await self.onmessage({data:{type:'range',nodeId:0,requestId:42,solutionSerial:serial-1}});
+  assert.equal(events.at(-1).type,'range-error');
  }
  events.length=0;await self.onmessage({data:{type:'select',index:999}});assert.equal(events.at(-1).type,'error');
 });
