@@ -1,0 +1,5 @@
+node_modules/
+*.rsl
+*.rar
+*.exe
+.DS_Store
