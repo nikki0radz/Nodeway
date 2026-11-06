@@ -13,7 +13,7 @@ export function initFeedback({pause=()=>{},resume=()=>{},context=()=>({})}={}){
  const banner=E('details',null,'design-banner');banner.open=true;
  banner.append(E('summary','A little note from Nicole ♡'));
  banner.append(E('p',"Owen, my love, I’ve created you a toggle switch at the top of this screen. If you switch to Design mode, it will pause whatever page you are on, and you can right click or long press on an element to add a comment :)"));
- banner.append(E('p',"This will make it easier for me to make the actual changes, as I’ll have them all in one place and know exactly which element you’re referring to. When you’re ready, click Upload comments, then submit the prepared feedback on GitHub (you’ll need to sign in). You can send more whenever you like. ♡"));
+ banner.append(E('p',"This will make it easier for me to make the actual changes, as I’ll have them all in one place and know exactly which element you’re referring to. Click Upload comments when you're done, then submit on GitHub. You can send them whenever."));
  ui.append(banner);document.body.prepend(ui);
  const outline=E('div',null,'design-outline');outline.dataset.feedbackUi='';outline.hidden=true;document.body.append(outline);
  const editor=E('dialog',null,'design-dialog');editor.dataset.feedbackUi='';editor.setAttribute('aria-label','Add a design comment');
