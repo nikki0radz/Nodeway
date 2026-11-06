@@ -11,11 +11,13 @@ const html=(await readFile('dist/index.html','utf8'))
  .replace(/src="app\.js(?:\?[^"\s]*)?"/,`src="app.js?v=${await fingerprint('dist/app.js')}"`);
 await writeFile('dist/index.html',html);
 await build({entryPoints:['src/concepts-feedback.js'],bundle:true,format:'esm',platform:'browser',outfile:'dist/concepts-feedback.js',minify:true});
-for(const page of ['dist/index.html','dist/concepts.html']){
+await build({entryPoints:['src/email-result.js'],bundle:true,format:'esm',platform:'browser',outfile:'dist/email-result.js',minify:true});
+for(const page of ['dist/index.html','dist/concepts.html','dist/email-result.html']){
  let content=await readFile(page,'utf8');
  if(!content.includes('href="feedback.css'))content=content.replace('</head>','<link rel="stylesheet" href="feedback.css"></head>');
  content=content.replace(/href="feedback\.css(?:\?[^"\s]*)?"/,`href="feedback.css?v=${await fingerprint('dist/feedback.css')}"`);
  content=content.replace(/src="concepts-feedback\.js(?:\?[^"\s]*)?"/,`src="concepts-feedback.js?v=${await fingerprint('dist/concepts-feedback.js')}"`);
+ content=content.replace(/src="email-result\.js(?:\?[^"\s]*)?"/,`src="email-result.js?v=${await fingerprint('dist/email-result.js')}"`);
  await writeFile(page,content);
 }
 const licenses=await Promise.all(['node_modules/fzstd/LICENSE','node_modules/node-unrar-js/LICENSE.md'].map(p=>readFile(p,'utf8')));
