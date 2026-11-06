@@ -1,21 +1,27 @@
+import {describeSolution,solutionCard} from './solution-card.js';
 const $=id=>document.getElementById(id),positions=['SB','BB','EP','MP','CO','BTN'];
 let worker,solution,nodeMap,history=[],archiveFiles=[],busy=false,selectedIndex=null;
 const el=(tag,text,className)=>{const n=document.createElement(tag);n.textContent=text;if(className)n.className=className;return n;};
 const shortName=name=>name.split(/[\\/]/).at(-1);
 const label=a=>a.type===1?'Fold':a.type===2?'Check':a.type===3?'Call':`Raise to ${a.amount} BB`;
-function setBusy(value){busy=value;$('cancel').hidden=!value;$('file').disabled=value;document.querySelectorAll('.file-card').forEach(b=>b.disabled=value);}
+function setBusy(value){busy=value;$('cancel').hidden=!value;$('file').disabled=value;document.querySelectorAll('.solution-open').forEach(b=>b.disabled=value);}
 function showError(message){$('error').textContent=message;$('error').hidden=false;$('status').hidden=true;setBusy(false);}
 function startWorker(){worker?.terminate();worker=new Worker(new URL('./import-worker.js',location.href));worker.onerror=event=>showError('Importer stopped: '+(event.message||'worker script could not be loaded')+'. Refresh and try again, or use a single extracted .rsl file.');worker.onmessage=({data})=>{
  if(data.type==='progress'){$('status').hidden=false;$('status').textContent=data.message;}
  if(data.type==='error')showError(data.message);
- if(data.type==='archive'){archiveFiles=data.files;renderArchive();setBusy(false);$('status').textContent=`Found ${data.files.length} saved solutions. Choose one below.`;}
+ if(data.type==='archive'){archiveFiles=data.files;renderArchive();setBusy(false);$('status').hidden=true;}
  if(data.type==='solution'){solution=data.solution;nodeMap=new Map(solution.nodes.map(n=>[n.id,n]));history=[];setBusy(false);$('status').hidden=true;renderSolution();$('viewer').scrollIntoView({behavior:'smooth',block:'start'});}
 };}
 function openFile(file){if(!file||busy)return;solution=null;history=[];archiveFiles=[];selectedIndex=null;$('viewer').hidden=true;$('archive').hidden=true;$('error').hidden=true;setBusy(true);$('status').hidden=false;$('status').textContent='Starting local import…';startWorker();worker.postMessage({type:'open',file});}
-function renderArchive(){$('archive').hidden=false;$('file-count').textContent=`${archiveFiles.length} solutions`;$('files').replaceChildren();for(const file of archiveFiles){const b=el('button','','file-card'+(file.index===selectedIndex?' selected':''));b.append(el('b',String(file.index+1).padStart(2,'0')));const info=el('div');info.append(el('span',shortName(file.name)),el('small',`${(file.size/1024/1024).toFixed(1)} MB · Open saved path →`));b.append(info);b.onclick=()=>{selectedIndex=file.index;renderArchive();$('viewer').hidden=true;$('error').hidden=true;setBusy(true);worker.postMessage({type:'select',index:file.index});};$('files').append(b);}}
+function renderArchive(){
+ $('archive').hidden=false;$('file-count').textContent=`${archiveFiles.length} solutions`;$('files').replaceChildren();
+ for(const file of archiveFiles)$('files').append(solutionCard(file,{selected:file.index===selectedIndex,onOpen:()=>{
+  if(busy)return;selectedIndex=file.index;renderArchive();$('viewer').hidden=true;$('error').hidden=true;setBusy(true);worker.postMessage({type:'select',index:file.index});
+ }}));
+}
 function current(){const last=history.at(-1);return last?.action.terminal?{terminal:true,action:last.action}:nodeMap.get(last?.action.id??0);}
 function renderSolution(){
- $('viewer').hidden=false;$('solution-title').textContent=shortName(solution.name);$('solution-meta').textContent=`RocketSolver ${solution.savedVersion} · ${solution.totalNodes.toLocaleString()} tree nodes · ${solution.nodes.length.toLocaleString()} preflop decisions`;
+ $('viewer').hidden=false;$('solution-title').textContent=describeSolution(solution.name).shortTitle;$('solution-title').title=shortName(solution.name);$('solution-meta').textContent=`RocketSolver ${solution.savedVersion} · ${solution.totalNodes.toLocaleString()} tree nodes · ${solution.nodes.length.toLocaleString()} preflop decisions`;
  $('checks').replaceChildren(...solution.checks.map(c=>el('span',c)));renderNode();
 }
 function go(depth){history=history.slice(0,depth);renderNode();}
