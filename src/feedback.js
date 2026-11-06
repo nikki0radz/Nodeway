@@ -1,4 +1,4 @@
-import {DRAFT_KEY,RECEIPT_KEY,EMAIL_RECIPIENT,prepareBatch,emailPayload,matchesReceipt,createEmailForm} from './feedback-data.js';
+import {DRAFT_KEY,RECEIPT_KEY,EMAIL_RECIPIENT,makeBatch,prepareBatch,emailPayload,matchesReceipt,createEmailForm,directEmailPayload} from './feedback-data.js';
 export function initFeedback({pause=()=>{},resume=()=>{},context=()=>({})}={}){
  const E=(tag,text,cls)=>{const e=document.createElement(tag);if(text)e.textContent=text;if(cls)e.className=cls;return e;};
  const B=(text,fn)=>{const b=E('button',text);b.type='button';b.onclick=fn;return b;};
@@ -13,7 +13,7 @@ export function initFeedback({pause=()=>{},resume=()=>{},context=()=>({})}={}){
  const banner=E('details',null,'design-banner');banner.open=true;
  banner.append(E('summary','A little note from Nicole ♡'));
  banner.append(E('p',"Owen, my love, I’ve created you a toggle switch at the top of this screen. If you switch to Design mode, it will pause whatever page you are on, and you can right click or long press on an element to add a comment :)"));
- banner.append(E('p',"This will make it easier for me to make the actual changes, as I’ll have them all in one place and know exactly which element you’re referring to. Click Send comments to Nicole when you're done, and they’ll be emailed to me. You can send them whenever."));
+ banner.append(E('p',"This will make it easier for me to make the actual changes, as I’ll have them all in one place and know exactly which element you’re referring to. Click Send comments to Nicole when you're done to open the email options. You can send them whenever."));
  ui.append(banner);document.body.prepend(ui);
  const outline=E('div',null,'design-outline');outline.dataset.feedbackUi='';outline.hidden=true;document.body.append(outline);
  const editor=E('dialog',null,'design-dialog');editor.dataset.feedbackUi='';editor.setAttribute('aria-label','Add a design comment');
@@ -51,7 +51,7 @@ export function initFeedback({pause=()=>{},resume=()=>{},context=()=>({})}={}){
  function downloadBackup(){const a=E('a');const url=URL.createObjectURL(new Blob([JSON.stringify({schema:'nodeway-design-feedback-backup/v1',comments,pending},null,2)],{type:'application/json'}));a.href=url;a.download='nodeway-design-comments.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
  function openReview(){
   dialog.replaceChildren(E('h2','Your comments for Nicole'));
-  dialog.append(E('p','Your comments will be emailed to hello@tanglevia.com through FormSubmit, with a JSON attachment. Only comments and element/page details are sent; solution files and strategy arrays stay on your device.'));
+  dialog.append(E('p','Email your comments to hello@tanglevia.com. The direct email options work without FormSubmit or activation. Only comments and element/page details are included; solution files stay on your device.'));
   const actions=E('div',null,'design-actions');actions.append(B('Close',()=>dialog.close()),B('Download JSON backup',downloadBackup));dialog.append(actions);
   if(storageFailed)dialog.append(E('p','Browser storage is unavailable. Download a backup to avoid losing your comments.','design-warning'));
   const unsent=comments.filter(c=>!c.submitted&&!c.emailAccepted),pendingIds=new Set(pending?.batch.comments.map(c=>c.id)||[]);
@@ -60,11 +60,23 @@ export function initFeedback({pause=()=>{},resume=()=>{},context=()=>({})}={}){
    const details=E('details');details.append(E('summary','Element & page details'),E('pre',JSON.stringify({target:comment.target,page:comment.page,viewport:comment.viewport,context:comment.context},null,2)));card.append(details);
    if(!comment.submitted&&!comment.emailAccepted&&!pendingIds.has(comment.id)){const tools=E('div',null,'design-actions');tools.append(B('Edit',()=>{dialog.close();openEditor(null,comment);}),B('Delete',()=>{comments=comments.filter(c=>c.id!==comment.id);persist();openReview();}));card.append(tools);}if(comment.emailAccepted){card.append(B('Queue for resend',()=>{delete comment.emailAccepted;persist();openReview();}));}dialog.append(card);
   }
+  if(unsent.length)showDirectEmail(unsent);
   if(pending)showHandoff();else if(unsent.length){
-   dialog.append(E('p','First use: Nicole may need to activate FormSubmit from her inbox. Once activated, resend this batch so the JSON attachment is included. Your drafts stay saved.','design-small'));
-   const button=B('Email Nicole',()=>sendEmail(unsent));button.className='design-primary';dialog.append(button);
+   dialog.append(E('p','Optional automatic service: FormSubmit has been timing out. If you try it, Nicole may need to activate it once and you must resend afterwards to include the attachment. Use direct email above if it fails.','design-small'));
+   const button=B('Try FormSubmit instead',()=>sendEmail(unsent));button.className='design-primary';dialog.append(button);
   }
   if(!dialog.open)dialog.showModal();
+ }
+ function showDirectEmail(unsent){
+  const payload=directEmailPayload(makeBatch(unsent,crypto.randomUUID())),box=E('section',null,'design-handoff');
+  box.append(E('h3','Direct email'),E('p',payload.needsAttachment?'1. Download the comments file. 2. Open your email and attach that file before sending.':'Open your email to review and send the comments. The comment text and element details are included.'));
+  const message=E('p',null,'design-status');message.setAttribute('role','status');
+  function download(){const a=E('a'),url=URL.createObjectURL(new Blob([payload.json],{type:'application/json'}));a.href=url;a.download=payload.filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+  const mail=E('a','Open email');mail.href=payload.href;mail.className='design-email-link';
+  const actions=E('div',null,'design-actions');actions.append(B('Download comments file',download),mail,B('Copy comments for email',async()=>{try{await navigator.clipboard.writeText(payload.text);message.textContent='Copied. Paste into an email to hello@tanglevia.com and send it.';}catch{message.textContent='Copy unavailable. Download the comments file and attach it to your email.';}}));
+  const file=new File([payload.json],payload.filename,{type:'application/json'});
+  if(navigator.canShare?.({files:[file]}))actions.append(B('Share comments file',async()=>{try{await navigator.share({files:[file],title:payload.subject,text:`Comments for ${EMAIL_RECIPIENT}`});message.textContent='Returned from sharing. Your backup is still saved.';}catch(error){message.textContent=error.name==='AbortError'?'Sharing cancelled. Your comments are still saved.':'Sharing unavailable. Download the file and attach it to an email.';}}));
+  box.append(actions,E('p','If no email app opens, use Copy comments for email and paste into Gmail or your usual email website. Opening an email or copying comments does not send them. Drafts stay saved here.','design-small'),message);dialog.append(box);
  }
  function sendEmail(unsent){
   const attempt=pending||{transport:'email',batch:prepareBatch(unsent,crypto.randomUUID()),nonce:crypto.randomUUID()};

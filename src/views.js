@@ -1,4 +1,5 @@
-export const VIEW_OPTIONS=[['tree','Decision tree','Follow connected branches'],['guided','Guided journey','One decision at a time'],['folders','Folder browser','Browse the saved branches'],['table','Poker table','Seats, chips and available actions'],['grid','Hand grid','169 hands and experimental action mixes'],['replay','Hand replay','Revisit your chosen path'],['compare','Compare nodes','Pin a position alongside the current one'],['gallery','Visual atlas','Browse positions as visual cards'],['search','Search','Find a player, action or node'],['canvas','Study canvas','Arrange connected nodes']];
+import {relativeEv,comparisonSettings,findEquivalentNode,compareSnapshots} from './ev.js';
+export const VIEW_OPTIONS=[['tree','Decision tree','Follow connected branches'],['guided','Guided journey','One decision at a time'],['folders','Folder browser','Browse the saved branches'],['table','Poker table','Seats, chips and available actions'],['grid','Hand grid','169 hands and experimental action mixes'],['replay','Hand replay','Revisit your chosen path'],['compare','Compare EV','Compare the same position across solutions'],['gallery','Visual atlas','Browse positions as visual cards'],['search','Search','Find a player, action or node'],['canvas','Study canvas','Arrange connected nodes']];
 export const POSITIONS=['SB','BB','EP','MP','CO','BTN'];
 export const actionLabel=a=>a.type===1?'Fold':a.type===2?'Check':a.type===3?'Call':`Raise to ${a.amount} BB`;
 export const color=a=>a.type===1?'#667b9a':a.type===2?'#77bba0':a.type===3?'#77bba0':['#d97876','#d8a365','#b99bd2'][Math.max(0,Math.round(a.amount))%3];
@@ -14,7 +15,7 @@ export function createNavigationIndex(solution){
  return {nodes,parents,pathTo};
 }
 export function createViews(host,controls,callbacks){
- let ctx,chosen=['table','grid'],hand='AA',pinned=null,search='',positions=new Map(),timer=null,trailKey='',lastSolution=null;
+ let ctx,chosen=['table','grid'],hand='AA',pinned=null,search='',positions=new Map(),timer=null,trailKey='',lastSolution=null,solutionId=0;
  try{const saved=JSON.parse(localStorage.getItem('nodeway-views-v1'));if(Array.isArray(saved)&&saved.length&&saved.every(x=>VIEW_OPTIONS.some(([id])=>id===x)))chosen=[...new Set(saved)];}catch{}
  const remember=()=>{try{localStorage.setItem('nodeway-views-v1',JSON.stringify(chosen));}catch{}};
  function stop(){clearInterval(timer);timer=null;}
@@ -33,8 +34,15 @@ export function createViews(host,controls,callbacks){
  function actions(node=ctx.node){const row=E('div',undefined,'actions');if(node.terminal){row.append(E('p',node.outcome,'small'));return row;}
   for(const a of node.actions){const b=B(actionLabel(a),()=>callbacks.navigate(a.id),a.type===10?'raise':'');b.append(E('small',a.terminal?'Finish preflop path':'Continue →'));row.append(b);}return row;
  }
- function summary(node,compact=false){const d=E('div',undefined,compact?'node-mini':'node-summary');d.append(E('strong',node.terminal?'End of preflop':`${POSITIONS[node.actor]} to act`),E('span',`Node ${node.id} · ${money(node.bets,ctx.solution.parameters.deadMoney)} BB committed pot`,'small'));return d;}
- function table(body){
+ function summary(node,compact=false,parameters=ctx.solution.parameters){const d=E('div',undefined,compact?'node-mini':'node-summary');d.append(E('strong',node.terminal?'End of preflop':`${POSITIONS[node.actor]} to act`),E('span',`Node ${node.id} · ${money(node.bets,parameters.deadMoney)} BB committed pot`,'small'));return d;}
+ function evSummary(body,node=ctx.node,range=ctx.range){
+  const box=E('div',undefined,'ev-summary'),value=relativeEv(range?.ev?.value,node);
+  box.append(E('span',`${POSITIONS[node.actor]||'Player'} node EV · from this decision`,'eyebrow'),E('strong',value===null?'—':`${value.toFixed(4)} BB`));
+  box.append(E('p',node.terminal?'EV is shown at decision nodes.':range?.evError?range.evError:!range?'Reading saved EV…':value===null?'No complete saved EV for this node. Missing values are not treated as zero.':'Experimental · Average for the saved range; includes chips already committed when converting from start-of-hand EV.','small'));
+  if(range?.ev)box.append(E('p',`Saved-weight coverage: ${(range.ev.coverage*100).toFixed(1)}%. ${range.ev.minSamples<1000?'Some played actions have fewer than 1,000 EV samples; estimates may be noisy.':'Not yet independently checked against RocketSolver.'}`,'small'));
+  body.append(box);
+ }
+ function table(body){evSummary(body);
   const n=ctx.node;body.append(E('p',n.terminal?'Preflop path complete':`${POSITIONS[n.actor]} to act`,'eyebrow'));
   const table=E('div',undefined,'table'),center=E('div',undefined,'table-center');center.append(E('span','SAVED POSITION','eyebrow'),E('strong',`${money(n.bets,ctx.solution.parameters.deadMoney)} BB`),E('span','Committed chips + dead money','small'));table.append(center);
   const seats=E('div');POSITIONS.forEach((p,i)=>{const folded=!(n.active&(1<<i)),seat=E('div',p,'seat'+(!n.terminal&&n.actor===i?' active':'')+(folded?' folded':''));seat.append(E('span',folded?'Folded':`${f(100-n.bets[i]/100)} BB left`));seats.append(seat);});table.append(seats);body.append(table,actions());
@@ -48,9 +56,9 @@ export function createViews(host,controls,callbacks){
  function mixBar(frequencies,actions,cls='mix-bar'){const bar=E('div',undefined,cls);if(!frequencies){bar.classList.add('no-mass');return bar;}frequencies.forEach((v,i)=>{if(v>0){const part=E('i');part.style.width=`${v*100}%`;part.style.background=color(actions[i]);bar.append(part);}});return bar;}
  function handDetails(body){
   const data=ctx.range?.hands.find(h=>h.label===hand);if(!data)return;
-  const detail=E('div',undefined,'hand-detail');detail.append(E('h4',`${hand} · ${data.combos} possible combinations`));
+  const detail=E('div',undefined,'hand-detail');detail.append(E('h4',`${hand} · ${data.combos} possible combinations`));if(data.actionEv)detail.append(E('p',`Experimental hand EV: ${data.ev===null?'unavailable':relativeEv(data.ev,ctx.node).toFixed(4)+' BB'} · from this decision`,'small'));
   if(!data.frequencies)detail.append(E('p','No saved weight for this hand at this node. This does not mean a 0% recommendation.','small'));
-  else for(let i=0;i<data.frequencies.length;i++){const line=E('div',undefined,'hand-action-line'),swatch=E('i');swatch.style.background=color(ctx.range.actions[i]);line.append(swatch,E('span',actionLabel(ctx.range.actions[i])),E('strong',percent(data.frequencies[i])));detail.append(line);}body.append(detail);
+  else for(let i=0;i<data.frequencies.length;i++){const line=E('div',undefined,'hand-action-line'),swatch=E('i');swatch.style.background=color(ctx.range.actions[i]);line.append(swatch,E('span',actionLabel(ctx.range.actions[i])),E('strong',percent(data.frequencies[i])));if(data.actionEv)line.append(E('span',data.actionEv[i]===null?'EV unavailable':`${relativeEv(data.actionEv[i],ctx.node).toFixed(4)} BB · ${data.evSamples[i].toLocaleString()} samples`,'small'));detail.append(line);}body.append(detail);
  }
  function grid(body){experimental(body);if(rangeStatus(body))return;
   const legend=E('div',undefined,'range-legend');ctx.range.actions.forEach((a,i)=>{const chip=E('span'),dot=E('i');dot.style.background=color(a);chip.append(dot,document.createTextNode(`${actionLabel(a)}${ctx.range.mix?` ${percent(ctx.range.mix[i])}`:''}`));legend.append(chip);});body.append(legend);
@@ -76,8 +84,26 @@ export function createViews(host,controls,callbacks){
   const slider=E('input');slider.type='range';slider.min='0';slider.max=String(full.length);slider.value=String(ctx.history.length);slider.disabled=!full.length;slider.setAttribute('aria-label','Replay position');slider.oninput=()=>{stop();callbacks.replay(Number(slider.value));};body.append(slider);
   const buttons=E('div',undefined,'view-presets'),previous=B('← Previous',()=>{stop();callbacks.replay(ctx.history.length-1);}),next=B('Next →',()=>{stop();callbacks.replay(ctx.history.length+1);});previous.disabled=!ctx.history.length;next.disabled=ctx.history.length>=full.length;
   const play=B(timer?'Pause':'Play path',()=>{if(timer){stop();render();return;}if(ctx.history.length===ctx.trail.length)callbacks.replay(0);timer=setInterval(()=>{if(ctx.history.length>=ctx.trail.length){stop();render();}else callbacks.replay(ctx.history.length+1);},1200);render();});play.disabled=!full.length;buttons.append(previous,play,next);body.append(buttons,summary(ctx.node));}
- function compare(body){body.append(B(pinned?'Replace pinned position':'Pin current position',()=>{pinned={node:structuredClone(ctx.node),range:ctx.range?structuredClone(ctx.range):null};render();}));
-  const pair=E('div',undefined,'compare-pair');for(const [name,state] of [['Pinned position',pinned],['Current position',{node:ctx.node,range:ctx.range}]]){const col=E('div',undefined,'comparison-card');col.append(E('p',name,'eyebrow'));if(!state){col.append(E('p','Pin a position, then follow another action to compare it here.','small'));}else{col.append(summary(state.node));if(!state.node.terminal)col.append(E('p',state.node.actions.map(actionLabel).join(' · '),'small'));const h=state.range?.hands.find(h=>h.label===hand);if(h?.frequencies){col.append(E('p',`${hand} · experimental mix`,'small'),mixBar(h.frequencies,state.range.actions));state.range.actions.forEach((a,i)=>col.append(E('p',`${actionLabel(a)} ${percent(h.frequencies[i])}`,'small')));}if(name==='Pinned position')col.append(B('Go to pinned node',()=>callbacks.navigate(state.node.id)));}pair.append(col);}body.append(pair);}
+ function snapshot(){return {node:ctx.node,range:ctx.range,path:ctx.history,settings:comparisonSettings(ctx.solution),parameters:ctx.solution.parameters,name:ctx.solution.name,solutionId};}
+ function compare(body){
+  const pin=B(pinned?'Replace pinned position':'Pin current position',()=>{pinned=structuredClone(snapshot());render();});pin.disabled=ctx.node.terminal||!ctx.range;
+  body.append(E('p','Pin the first solution’s position, open the other solution, then choose its matching position. The pin stays here when you switch files.','small'),pin);
+  if(pinned){body.append(B('Clear pin',()=>{pinned=null;render();}));const match=findEquivalentNode(ctx.solution,pinned.path);const jump=B('Find matching position',()=>callbacks.navigate(match));jump.disabled=match===null;body.append(jump);if(match===null)body.append(E('p','That action path does not exist in this solution.','small'));}
+  const now=snapshot(),pair=E('div',undefined,'compare-pair');
+  for(const [name,state] of [['Pinned solution',pinned],['Current solution',now]]){
+   const col=E('div',undefined,'comparison-card');col.append(E('p',name,'eyebrow'));
+   if(!state)col.append(E('p','No position pinned yet.','small'));
+   else{col.append(E('strong',state.name.split(/[\\/]/).at(-1)),summary(state.node,false,state.parameters),E('p',state.path.length?state.path.map(h=>`${POSITIONS[h.actor]} ${actionLabel(h.action)}`).join(' → '):'Start of solution','small'));evSummary(col,state.node,state.range);
+    if(!state.node.terminal)col.append(E('p',`Available actions: ${state.node.actions.map(actionLabel).join(' · ')}`,'small'));
+    const h=state.range?.hands.find(h=>h.label===hand);if(h?.frequencies){col.append(E('p',`${hand} · experimental mix`,'small'),mixBar(h.frequencies,state.range.actions));state.range.actions.forEach((a,i)=>col.append(E('p',`${actionLabel(a)} ${percent(h.frequencies[i])}${h.actionEv?.[i]!=null?' · '+relativeEv(h.actionEv[i],state.node).toFixed(4)+' BB':''}`,'small')));}
+   }pair.append(col);
+  }body.append(pair);
+  const result=compareSnapshots(pinned,now),delta=E('div',undefined,'ev-summary');
+  if(result.reason)delta.append(E('p',result.reason));else{delta.append(E('span','CURRENT − PINNED · EXPERIMENTAL','eyebrow'),E('strong',`${result.delta>=0?'+':''}${result.delta.toFixed(4)} BB per visit to this node`));
+   if(pinned.solutionId===solutionId)delta.append(E('p','Both positions are from the same loaded solution. Open a different solve to compare strategies.','small'));
+   delta.append(E('p','This is a difference between saved solves, not proof that an extra action alone caused it. Opponent strategies, reaching ranges and convergence can also differ. BB per visit is not BB per 100 dealt hands.','small'));
+  }body.append(delta);
+ }
  function neighbours(){return [ctx.node.id,...(ctx.node.actions||[]).map(a=>a.id)];}
  function visualNode(id){const n=ctx.index.nodes.get(id);if(n)return n;const p=ctx.index.parents.get(id);return {id,terminal:true,bets:p.action.bets,active:p.action.active,outcome:p.action.outcome};}
  function gallery(body){body.append(E('p','The current position and its next saved branches. Select a card to update every view.','small'));const gallery=E('div',undefined,'visual-cards');for(const id of neighbours()){const n=visualNode(id),entry=ctx.index.parents.get(id),b=B('',()=>callbacks.navigate(id),'visual-node'+(id===ctx.node.id?' current':''));const art=E('div',undefined,'mini-table');art.append(E('strong',`${money(n.bets,ctx.solution.parameters.deadMoney)} BB`),E('span',n.terminal?'Preflop endpoint':`${POSITIONS[n.actor]} to act`));b.append(art,E('strong',id===ctx.node.id?'Current position':actionLabel(entry.action)),E('span',`Node ${id}`,'small'));gallery.append(b);}body.append(gallery);}
@@ -95,5 +121,5 @@ export function createViews(host,controls,callbacks){
  }
  const renderers={table,grid,tree,guided,folders,replay,compare,gallery,search:searchView,canvas};
  function render(){if(!ctx)return;const focused=document.activeElement?.id,selection=focused==='solution-node-search'?document.activeElement.selectionStart:null;controlsView();host.replaceChildren();if(!chosen.length)host.append(E('p','Choose a view above to display this solution. Your place in the path is preserved.','view-empty'));for(const id of chosen){const name=VIEW_OPTIONS.find(([key])=>key===id)[1];renderers[id](card(id,name));}if(focused){const input=document.getElementById(focused);input?.focus({preventScroll:true});if(input&&focused==='solution-node-search'&&selection!==null)input.setSelectionRange(selection,selection);}}
- return {update(context){ctx=context;if(lastSolution!==ctx.solution){stop();pinned=null;search='';positions.clear();lastSolution=ctx.solution;hand='AA';}const newKey=ctx.trail.map(h=>h.action.id).join(',');if(trailKey!==newKey){stop();trailKey=newKey;}render();},clear(){stop();ctx=null;host.replaceChildren();controls.replaceChildren();},stop};
+ return {update(context){ctx=context;if(lastSolution!==ctx.solution){stop();solutionId++;search='';positions.clear();lastSolution=ctx.solution;hand='AA';}const newKey=ctx.trail.map(h=>h.action.id).join(',');if(trailKey!==newKey){stop();trailKey=newKey;}render();},clear(){stop();ctx=null;host.replaceChildren();controls.replaceChildren();},stop};
 }

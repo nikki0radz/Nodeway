@@ -32,3 +32,15 @@ export function createEmailForm(payload,doc=document){
  if(attachment.files.length!==1)throw new Error('This browser could not attach the JSON. Download the backup and email it to Nicole instead.');
  form.append(attachment);return form;
 }
+
+export function directEmailPayload(batch){
+ const filename=`nodeway-comments-${batch.batchId}.json`,json=JSON.stringify(batch,null,2);
+ const subject=`Nodeway comments for Nicole (${batch.comments.length})`;
+ const intro=`Hi Nicole, here are my Nodeway comments.\n\n`;
+ const text=intro+batch.comments.map((c,i)=>`${i+1}. ${c.comment}\nElement: ${c.target?.panel||c.target?.text||c.target?.tag||'Page'}\nPage: ${c.page?.path||''}${c.page?.hash||''}\nDetails: ${JSON.stringify({target:c.target,context:c.context,viewport:c.viewport})}`).join('\n\n');
+ const base=`mailto:${EMAIL_RECIPIENT}?subject=${encodeURIComponent(subject)}&body=`;
+ const complete=base+encodeURIComponent(text);
+ const needsAttachment=complete.length>1800;
+ const body=needsAttachment?intro+`I have attached ${filename} with the comments and element details.\n\n[Attach the downloaded JSON file before sending.]`:text;
+ return {filename,json,text,subject,needsAttachment,href:base+encodeURIComponent(body)};
+}

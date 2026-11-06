@@ -38,3 +38,9 @@ test('multipart form contains a JSON File, not just a filename or mailto link',a
   assert.equal(form.children.find(c=>c.name==='feedback_json').value,payload.json);
  }finally{if(previous===undefined)delete globalThis.DataTransfer;else globalThis.DataTransfer=previous;}
 });
+
+test('direct email preserves details and switches large drafts to an attachment without truncating backup',async()=>{
+ const {directEmailPayload}=await import('../src/feedback-data.js');const payload=directEmailPayload(batch);
+ assert.equal(new URL(payload.href).pathname,'hello@tanglevia.com');assert.equal(payload.needsAttachment,false);assert.ok(new URL(payload.href).searchParams.get('body').includes('Please move this button'));assert.ok(payload.text.includes('123'));assert.deepEqual(JSON.parse(payload.json),batch);
+ const large=directEmailPayload(makeBatch([{...comment,comment:'😄 & ? #\n'.repeat(700)}],'large'));assert.equal(large.needsAttachment,true);assert.ok(large.href.length<1800);assert.ok(new URL(large.href).searchParams.get('body').includes(large.filename));assert.equal(JSON.parse(large.json).comments[0].comment,'😄 & ? #\n'.repeat(700));
+});

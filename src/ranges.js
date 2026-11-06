@@ -1,3 +1,4 @@
+import {attachNodeEv} from './ev.js';
 import {directory,section} from './rsl.js';
 // Inferred from the supplied v12 arrays: triangular pairs/offsuit, then suited.
 // This order and the normalized average weights remain experimental until
@@ -25,7 +26,7 @@ export function createRangeReader(raw,solution){
   const node=nodes.get(nodeId);if(!node)throw new Error('No decision range is available at this preflop endpoint.');
   const container=await (containerPromise??=directory(raw));
   // Keep only one player's section in memory. Concurrent requests share its promise.
-  if(cache?.actor!==node.actor)cache={actor:node.actor,bytes:section(container,`R_${node.actor}_0`)};
-  const entry=cache;try{return decodeNodeRange(await entry.bytes,solution.actionSlots[node.actor],node);}catch(error){if(cache===entry)cache=null;throw error;}
+  if(cache?.actor!==node.actor)cache={actor:node.actor,bytes:section(container,`R_${node.actor}_0`),ev:solution.settings?.saveEv?.[0]>0&&container.entries.has(`Q_${node.actor}_0`)?section(container,`Q_${node.actor}_0`).then(bytes=>({bytes}),error=>({error})):Promise.resolve({})};
+  const entry=cache;try{const range=decodeNodeRange(await entry.bytes,solution.actionSlots[node.actor],node),saved=await entry.ev;if(saved.error)return {...range,evError:saved.error.message};if(!saved.bytes)return {...range,evError:'No saved preflop EV data is available.'};try{return attachNodeEv(range,saved.bytes,solution.actionSlots[node.actor],node);}catch(error){return {...range,evError:error.message};}}catch(error){if(cache===entry)cache=null;throw error;}
  };
 }

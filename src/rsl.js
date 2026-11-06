@@ -99,5 +99,5 @@ export async function parseRsl(raw,name,onProgress=()=>{}){
  onProgress('Reading the saved decision tree…');const tree=readTree(await section(c,'B'));
  onProgress('Connecting preflop decisions…');const mapped=mapPreflop(tree,params);
  for(let i=0;i<6;i++)check(c.entries.get(`R_${i}_0`)?.size===mapped.rows[i]*169*8,'Saved range dimensions do not match the reconstructed tree.');
- return {name,savedVersion,formatVersion:12,parameters:params,totalNodes:mapped.totalNodes,nodes:mapped.nodes,actionSlots:mapped.rows,sections:c.entries.size,rangeStatus:'unverified',checks:['Directory authenticated','Settings and tree decoded','Preflop action counts match saved range dimensions']};
+ return {name,savedVersion,formatVersion:12,parameters:params,settings,totalNodes:mapped.totalNodes,nodes:mapped.nodes,actionSlots:mapped.rows,sections:c.entries.size,rangeStatus:'unverified',checks:['Directory authenticated','Settings and tree decoded','Preflop action counts match saved range dimensions']};
 }
