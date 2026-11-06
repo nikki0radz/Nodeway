@@ -16,7 +16,7 @@ function requestRange(){
  currentRange=null;rangeError=null;const n=current();const requestId=++rangeRequest;
  renderNode();if(!n.terminal)worker.postMessage({type:'range',nodeId:n.id,requestId,solutionSerial});
 }
-function startWorker(){worker?.terminate();worker=new Worker(new URL('./import-worker.js',location.href));worker.onerror=event=>showError('Importer stopped: '+(event.message||'worker script could not be loaded')+'. Refresh and try again, or use a single extracted .rsl file.');worker.onmessage=({data})=>{
+function startWorker(){worker?.terminate();worker=new Worker(new URL(__NODEWAY_WORKER_URL__,location.href));worker.onerror=event=>showError('Importer stopped: '+(event.message||'worker script could not be loaded')+'. Refresh and try again, or use a single extracted .rsl file.');worker.onmessage=({data})=>{
  if(data.type==='progress'){$('status').hidden=false;$('status').textContent=data.message;}
  if(data.type==='error')showError(data.message);
  if((data.type==='range'||data.type==='range-error')&&data.requestId===rangeRequest&&data.solutionSerial===solutionSerial){if(data.type==='range')currentRange=data.range;else rangeError=data.message;renderNode();}
